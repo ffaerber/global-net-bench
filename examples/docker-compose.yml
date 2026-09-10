@@ -1,0 +1,38 @@
+# Minimal GlobalNetBench deployment using the published Docker Hub image.
+#
+# This is the fastest way to get running and needs nothing from this repository
+# except a config file:
+#
+#   mkdir globalnetbench && cd globalnetbench
+#   curl -O https://raw.githubusercontent.com/ffaerber/global-net-bench/main/examples/docker-compose.yml
+#   curl -o config.yaml https://raw.githubusercontent.com/ffaerber/global-net-bench/main/config.example.yaml
+#   docker compose up -d
+#
+# Then open http://localhost:8080.
+#
+# Storage is SQLite in the gnb-data volume, so there is no database to run. For
+# PostgreSQL plus optional Prometheus and Grafana, use the docker-compose.yml at
+# the repository root instead.
+
+services:
+  globalnetbench:
+    # Override with GNB_IMAGE to pull from a different repository or pin a
+    # release, e.g. GNB_IMAGE=ffaerber/globalnetbench:0.1.0
+    image: ${GNB_IMAGE:-ffaerber/globalnetbench:latest}
+    container_name: globalnetbench
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/etc/globalnetbench/config.yaml:ro
+      - gnb-data:/data
+    # ICMP and traceroute need raw sockets; nothing else here does. Without
+    # NET_RAW the app still runs and still measures latency over TCP, HTTPS and
+    # DNS, but ping and traceroute are skipped.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+
+volumes:
+  gnb-data:

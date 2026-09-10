@@ -28,7 +28,38 @@ deployment shows up as exactly that instead of dragging every score down.
 
 ## Quick start
 
-### Docker Compose
+### Docker (published image)
+
+The fastest path — nothing to clone, SQLite storage, no database to run:
+
+```bash
+mkdir globalnetbench && cd globalnetbench
+curl -O https://raw.githubusercontent.com/ffaerber/global-net-bench/main/examples/docker-compose.yml
+curl -o config.yaml https://raw.githubusercontent.com/ffaerber/global-net-bench/main/config.example.yaml
+docker compose up -d
+```
+
+Open <http://localhost:8080>. See
+[`examples/docker-compose.yml`](examples/docker-compose.yml).
+
+Images are published for `linux/amd64` and `linux/arm64`, so a Raspberry Pi or
+an ARM VPS works as well as an x86 server:
+
+| Tag | What it is |
+| --- | --- |
+| `latest` | The most recent tagged release |
+| `0.1.0`, `0.1` | A specific release |
+| `edge` | The current `main` branch |
+
+Pin a release rather than tracking `latest` if you care about reproducibility:
+
+```bash
+GNB_IMAGE=ffaerber/globalnetbench:0.1.0 docker compose up -d
+```
+
+### Docker Compose from source
+
+For PostgreSQL plus the optional Prometheus and Grafana stack:
 
 ```bash
 git clone https://github.com/ffaerber/global-net-bench.git
@@ -37,9 +68,7 @@ cp config.example.yaml config.yaml   # edit to taste
 docker compose up -d
 ```
 
-Open <http://localhost:8080>.
-
-The compose file uses PostgreSQL, so switch the `database` block in
+That compose file uses PostgreSQL, so switch the `database` block in
 `config.yaml` to:
 
 ```yaml
@@ -232,6 +261,37 @@ internal/store        SQLite + PostgreSQL persistence
 internal/api          REST, SSE, Prometheus
 internal/web          embedded dashboard
 ```
+
+## Docker Hub publishing
+
+[`.github/workflows/docker.yml`](.github/workflows/docker.yml) tests every push
+and pull request, then builds and pushes multi-arch images. Pull requests build
+the image but never push — a fork PR has no access to the registry credentials.
+
+Configure these in **Settings → Secrets and variables → Actions**:
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| `DOCKERHUB_USERNAME` | Secret | Docker Hub account |
+| `DOCKERHUB_TOKEN` | Secret | Docker Hub **access token**, not the password |
+| `DOCKERHUB_IMAGE` | Variable (optional) | Overrides the default `<username>/globalnetbench` |
+
+Create the token at Docker Hub → Account Settings → Personal access tokens with
+**Read & Write** scope.
+
+What gets published:
+
+- push to `main` → `edge`
+- push of a `v*` tag → the version tags plus `latest`
+
+So cutting a release is:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The workflow fails early with a clear message if the credentials are missing,
+rather than getting as far as a build and then failing at the push.
 
 ## Roadmap
 
