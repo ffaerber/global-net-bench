@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/lib/pq v1.12.3
+	github.com/oschwald/maxminddb-golang/v2 v2.6.0
 	golang.org/x/net v0.38.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.58.0

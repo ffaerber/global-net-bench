@@ -14,6 +14,7 @@ import (
 
 	"github.com/ffaerber/global-net-bench/internal/bus"
 	"github.com/ffaerber/global-net-bench/internal/config"
+	"github.com/ffaerber/global-net-bench/internal/geoip"
 	"github.com/ffaerber/global-net-bench/internal/model"
 	"github.com/ffaerber/global-net-bench/internal/probe"
 	"github.com/ffaerber/global-net-bench/internal/store"
@@ -42,6 +43,10 @@ type Engine struct {
 	// runMu serialises runs so a manual benchmark cannot overlap a scheduled
 	// one and double the load on every target.
 	runMu sync.Mutex
+
+	// geo is nil when no GeoIP database is configured, which is the default.
+	// The nil resolver is usable, so hop enrichment needs no special case.
+	geo *geoip.Resolver
 
 	mu       sync.RWMutex
 	latest   map[SeriesKey]model.Measurement
@@ -79,7 +84,9 @@ type RunSummary struct {
 	Events       int       `json:"events"`
 }
 
-func New(cfg *config.Config, st store.Store, b *bus.Bus, log *slog.Logger) *Engine {
+// New builds the engine. It fails if GeoIP is enabled but its databases cannot
+// be opened, rather than starting up and quietly plotting nothing.
+func New(cfg *config.Config, st store.Store, b *bus.Bus, log *slog.Logger) (*Engine, error) {
 	e := &Engine{
 		cfg:      cfg,
 		store:    st,
@@ -91,9 +98,19 @@ func New(cfg *config.Config, st store.Store, b *bus.Bus, log *slog.Logger) *Engi
 		caps:     detectCapabilities(),
 		publicIP: newPublicIPWatcher(),
 	}
+	if cfg.GeoIP.Enabled {
+		resolver, err := geoip.Open(cfg.GeoIP.CityDB, cfg.GeoIP.ASNDB)
+		if err != nil {
+			return nil, fmt.Errorf("geoip: %w", err)
+		}
+		e.geo = resolver
+	}
 	e.detector = newDetector(cfg, st, b, log)
-	return e
+	return e, nil
 }
+
+// Close releases resources held by the engine.
+func (e *Engine) Close() error { return e.geo.Close() }
 
 func detectCapabilities() Capabilities {
 	caps := Capabilities{}
@@ -462,10 +479,31 @@ func (e *Engine) runTraceroute(ctx context.Context, region model.Region, target 
 		h := model.RouteHop{Hop: hop.TTL, RTTMS: hop.AvgRTT()}
 		if hop.Responded() {
 			h.IP = hop.Addr.String()
+			h.Geo = e.lookupHopGeo(hop.Addr)
 		}
 		route.Hops = append(route.Hops, h)
 	}
 	return route
+}
+
+// lookupHopGeo resolves a hop's approximate position. It returns nil when GeoIP
+// is disabled, when the address is not publicly locatable, or when the database
+// has nothing for it -- all of which are ordinary, not errors.
+func (e *Engine) lookupHopGeo(addr netip.Addr) *model.HopGeo {
+	loc, ok := e.geo.Lookup(addr)
+	if !ok {
+		return nil
+	}
+	return &model.HopGeo{
+		Latitude:    loc.Latitude,
+		Longitude:   loc.Longitude,
+		City:        loc.City,
+		Country:     loc.Country,
+		CountryName: loc.CountryName,
+		ASN:         loc.ASN,
+		Org:         loc.Org,
+		Confidence:  string(loc.Confidence),
+	}
 }
 
 // probeResolvers benchmarks the configured DNS resolvers. Results are filed

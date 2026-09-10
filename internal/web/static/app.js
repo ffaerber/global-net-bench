@@ -5,7 +5,25 @@ const state = {
   status: null,
   targets: [],
   selectedRegion: null,
+  globes: {},
+  focusedGlobe: false,
 };
+
+// Globes are built on first use so the land outline is only fetched by someone
+// who actually opens a page showing one.
+function globeFor(id, containerId) {
+  if (!state.globes[id]) {
+    const container = $(containerId);
+    if (!container) return null;
+    const globe = new Globe(container);
+    globe.onRegionClick = (regionId) => {
+      state.selectedRegion = regionId;
+      showPage('regions');
+    };
+    state.globes[id] = globe;
+  }
+  return state.globes[id];
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -119,6 +137,7 @@ function renderSnapshot(snapshot) {
   $('route-changes').textContent = snapshot.route_changes_today ?? 0;
 
   renderRegionMap(snapshot.regions || []);
+  renderGlobe(snapshot.regions || []);
   renderResolvers(snapshot.resolvers || []);
   renderRegionsTable(snapshot.regions || []);
 
@@ -157,6 +176,33 @@ function renderRegionMap(regions) {
     card.appendChild(el('div', 'metrics', region.updated_at ? `updated ${relative(region.updated_at)}` : 'never measured'));
 
     container.appendChild(card);
+  }
+}
+
+function renderGlobe(regions) {
+  const globe = globeFor('overview', 'overview-globe');
+  if (!globe) return;
+  globe.setRegions(regions);
+
+  const plotted = regions.filter((r) => r.latitude !== null && r.latitude !== undefined &&
+    r.longitude !== null && r.longitude !== undefined);
+  const note = $('overview-globe-note');
+  const missing = regions.length - plotted.length;
+  if (missing > 0) {
+    note.textContent = missing === regions.length
+      ? 'No region has coordinates yet. Add latitude and longitude to each region in the configuration to plot them.'
+      : `${missing} of ${regions.length} regions have no coordinates and are not shown. Add latitude and longitude to plot them.`;
+    note.hidden = false;
+  } else {
+    note.hidden = true;
+  }
+
+  // Swing the globe round to the local site once, the first time there is
+  // something to look at.
+  if (!state.focusedGlobe && plotted.length) {
+    const local = plotted.find((r) => r.local) || plotted[0];
+    globe.focusOn(local.longitude, local.latitude);
+    state.focusedGlobe = true;
   }
 }
 
@@ -296,13 +342,57 @@ pageLoaders.events = async () => {
 
 /* ---------- routes ---------- */
 
+// renderRouteGlobe plots the most recent trace. It is deliberately explicit
+// about how much of the path it could not place: an unlabelled gap would read
+// as a route that went nowhere, and a confidently drawn line through a
+// mislocated backbone router is worse than no line at all.
+function renderRouteGlobe(route) {
+  const globe = globeFor('routes', 'route-globe');
+  if (!globe) return;
+  const note = $('route-globe-note');
+
+  const hops = (route && route.hops) || [];
+  const located = hops.filter((h) => h.geo && h.geo.latitude !== null && h.geo.latitude !== undefined &&
+    h.geo.longitude !== null && h.geo.longitude !== undefined);
+  globe.setRegions(state.snapshot ? state.snapshot.regions || [] : []);
+  globe.setRoute(located.length ? located : null);
+
+  if (!hops.length) {
+    note.textContent = 'No trace to plot yet.';
+    note.hidden = false;
+    return;
+  }
+  if (!located.length) {
+    note.textContent = 'None of these hops could be placed on the map. Enable geoip in the configuration and point it at a city database to locate them.';
+    note.hidden = false;
+    return;
+  }
+
+  const parts = [`Showing ${located.length} of ${hops.length} hops.`];
+  const unplaced = hops.length - located.length;
+  if (unplaced > 0) {
+    parts.push(`${unplaced} could not be located (private addresses, hops that did not answer, or addresses missing from the database); dashed segments span those gaps.`);
+  }
+  const approximate = located.filter((h) => h.geo.confidence === 'low').length;
+  if (approximate > 0) {
+    parts.push(approximate === 1
+      ? '1 hop, shown hollow, is a country-level guess only.'
+      : `${approximate} hops, shown hollow, are country-level guesses only.`);
+  }
+  parts.push('Positions come from a GeoIP database, not from the network itself, and backbone routers often resolve to where their address block is registered rather than where the hardware is.');
+  note.textContent = parts.join(' ');
+  note.hidden = false;
+}
+
 function renderRoutes(routes) {
   const container = $('routes-content');
   clear(container);
   if (!routes.length) {
+    renderRouteGlobe(null);
     container.appendChild(el('div', 'empty', 'No routes recorded yet. Route tests need a raw ICMP socket (CAP_NET_RAW).'));
     return;
   }
+  renderRouteGlobe(routes[0]);
 
   // Group by target and family so repeated traces collapse into one card each.
   const seen = new Set();
@@ -322,6 +412,14 @@ function renderRoutes(routes) {
       line.appendChild(el('span', 'ttl', hop.hop));
       line.appendChild(el('span', hop.ip ? null : 'silent', hop.ip || '* no reply'));
       line.appendChild(el('span', null, hop.rtt_ms !== null && hop.rtt_ms !== undefined ? fmtMs(hop.rtt_ms, 2) : ''));
+      if (hop.geo) {
+        const where = [hop.geo.city, hop.geo.country_name || hop.geo.country].filter(Boolean).join(', ');
+        const bits = [];
+        if (where) bits.push(hop.geo.confidence === 'low' ? `${where} (approx)` : where);
+        if (hop.geo.org) bits.push(hop.geo.org);
+        else if (hop.geo.asn) bits.push(`AS${hop.geo.asn}`);
+        if (bits.length) line.appendChild(el('span', 'hop-geo', bits.join(' · ')));
+      }
       card.appendChild(line);
     }
     container.appendChild(card);

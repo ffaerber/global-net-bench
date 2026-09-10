@@ -13,6 +13,11 @@
   --down: #f85149;
   --unknown: #6e7681;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  /* The globe needs more separation between sea and land than the general
+     surface colours give, or the continents disappear into the background. */
+  --globe-ocean: #131b26;
+  --globe-land: #33404e;
+  --globe-grid: #2a3542;
 }
 
 @media (prefers-color-scheme: light) {
@@ -24,6 +29,9 @@
     --text: #1f2328;
     --muted: #59636e;
     --unknown: #8c959f;
+    --globe-ocean: #e8eef5;
+    --globe-land: #b3c0cf;
+    --globe-grid: #cfd8e3;
   }
 }
 
@@ -147,14 +155,76 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .route { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
 .route-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; margin-bottom: 10px; }
 .route-head .fp { font-family: var(--mono); color: var(--muted); font-size: 12px; }
-.hop { display: grid; grid-template-columns: 34px 1fr 90px; gap: 10px; padding: 4px 0; font-family: var(--mono); font-size: 12.5px; border-bottom: 1px solid var(--border); }
+.hop { display: grid; grid-template-columns: 34px minmax(0, 1fr) 90px minmax(0, 1.1fr); gap: 10px; padding: 4px 0; font-family: var(--mono); font-size: 12.5px; border-bottom: 1px solid var(--border); }
+.hop .hop-geo { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hop:last-child { border-bottom: none; }
 .hop .ttl { color: var(--muted); }
 .hop .silent { color: var(--unknown); }
 
 .empty { color: var(--muted); padding: 18px; text-align: center; background: var(--panel); border: 1px dashed var(--border); border-radius: 10px; }
 
+/* --- Globe ---------------------------------------------------------------- */
+
+.globe-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.globe-holder {
+  position: relative;
+  width: 100%;
+  height: 440px;
+  touch-action: none; /* let a drag rotate the globe instead of scrolling */
+}
+
+.globe-canvas { display: block; cursor: grab; }
+.globe-canvas.dragging { cursor: grabbing; }
+
+.globe-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.globe-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.globe-hint { margin-right: auto; }
+
+.legend-item { display: inline-flex; align-items: center; gap: 5px; }
+
+.swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.swatch.status-excellent { background: var(--excellent); }
+.swatch.status-good { background: var(--good); }
+.swatch.status-fair { background: var(--fair); }
+.swatch.status-degraded { background: var(--degraded); }
+.swatch.status-down { background: var(--down); }
+
+.globe-note {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 @media (max-width: 640px) {
   main { padding: 14px; }
   .score-value { font-size: 34px; }
+  .globe-holder { height: 320px; }
 }

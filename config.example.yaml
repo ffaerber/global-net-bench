@@ -41,6 +41,10 @@ regions:
   #   local: true
   #   weight: 1.0
   #   expected_rtt_ms: 5
+  #   # Your own position. Sets the origin the globe draws its arcs from; a
+  #   # region without coordinates is still measured, just not plotted.
+  #   latitude: 34.78
+  #   longitude: 32.42
   #   targets:
   #     - id: gateway
   #       hostname: 192.168.1.1
@@ -49,6 +53,8 @@ regions:
 
   - id: eu-central
     display_name: Frankfurt
+    latitude: 50.11
+    longitude: 8.68
     weight: 1.0
     expected_rtt_ms: 40
     targets:
@@ -59,6 +65,8 @@ regions:
 
   - id: eu-north
     display_name: Stockholm
+    latitude: 59.33
+    longitude: 18.07
     weight: 1.0
     expected_rtt_ms: 60
     targets:
@@ -69,6 +77,8 @@ regions:
 
   - id: uk
     display_name: London
+    latitude: 51.51
+    longitude: -0.13
     weight: 1.0
     expected_rtt_ms: 55
     targets:
@@ -79,6 +89,8 @@ regions:
 
   - id: na-east
     display_name: North America East
+    latitude: 39.04
+    longitude: -77.49
     weight: 1.0
     expected_rtt_ms: 120
     targets:
@@ -89,6 +101,8 @@ regions:
 
   - id: na-west
     display_name: North America West
+    latitude: 37.77
+    longitude: -122.42
     weight: 1.0
     expected_rtt_ms: 170
     targets:
@@ -99,6 +113,8 @@ regions:
 
   - id: south-america
     display_name: São Paulo
+    latitude: -23.55
+    longitude: -46.63
     weight: 1.0
     expected_rtt_ms: 220
     targets:
@@ -109,6 +125,8 @@ regions:
 
   - id: africa
     display_name: Cape Town
+    latitude: -33.92
+    longitude: 18.42
     weight: 1.0
     expected_rtt_ms: 180
     targets:
@@ -119,6 +137,8 @@ regions:
 
   - id: middle-east
     display_name: Bahrain
+    latitude: 26.07
+    longitude: 50.55
     weight: 1.0
     expected_rtt_ms: 100
     targets:
@@ -129,6 +149,8 @@ regions:
 
   - id: asia-japan
     display_name: Tokyo
+    latitude: 35.68
+    longitude: 139.69
     weight: 1.0
     expected_rtt_ms: 200
     targets:
@@ -139,6 +161,8 @@ regions:
 
   - id: asia-southeast
     display_name: Singapore
+    latitude: 1.35
+    longitude: 103.82
     weight: 1.0
     expected_rtt_ms: 170
     targets:
@@ -149,6 +173,8 @@ regions:
 
   - id: oceania
     display_name: Sydney
+    latitude: -33.87
+    longitude: 151.21
     weight: 1.0
     expected_rtt_ms: 280
     targets:
@@ -211,6 +237,26 @@ retention:
 
 prometheus:
   enabled: true
+
+# Places traceroute hops on the dashboard globe. Lookups are made against local
+# database files, so nothing about your routes is sent anywhere.
+#
+# No database ships with GlobalNetBench. DB-IP Lite needs no account:
+#
+#   curl -LO https://download.db-ip.com/free/dbip-city-lite-2026-09.mmdb.gz
+#   curl -LO https://download.db-ip.com/free/dbip-asn-lite-2026-09.mmdb.gz
+#   gunzip dbip-*.mmdb.gz
+#
+# MaxMind's GeoLite2 is more accurate but requires a free account and licence
+# key. Either format works; both files are optional.
+#
+# Treat hop positions as rough. Backbone routers commonly resolve to wherever
+# their address block is registered rather than to where the hardware is, so the
+# dashboard marks low-confidence positions and never draws them as certain.
+geoip:
+  enabled: false
+  # city_db: /data/geoip/dbip-city-lite.mmdb
+  # asn_db: /data/geoip/dbip-asn-lite.mmdb
 
 # Latency is scored against each path's own learned baseline rather than an
 # absolute number, so a distant region is not penalised for being distant.

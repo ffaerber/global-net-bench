@@ -49,10 +49,14 @@ type TargetScore struct {
 }
 
 type RegionScore struct {
-	ID           string        `json:"id"`
-	DisplayName  string        `json:"display_name"`
-	Weight       float64       `json:"weight"`
-	Local        bool          `json:"local"`
+	ID          string  `json:"id"`
+	DisplayName string  `json:"display_name"`
+	Weight      float64 `json:"weight"`
+	Local       bool    `json:"local"`
+	// Latitude and Longitude are carried through so the dashboard globe can
+	// plot the region. Absent when the region has no configured position.
+	Latitude     *float64      `json:"latitude,omitempty"`
+	Longitude    *float64      `json:"longitude,omitempty"`
 	Score        float64       `json:"score"`
 	Status       string        `json:"status"`
 	HasData      bool          `json:"has_data"`
@@ -133,6 +137,8 @@ func Compute(in Input) Snapshot {
 			DisplayName: region.DisplayName,
 			Weight:      region.Weight,
 			Local:       region.Local,
+			Latitude:    region.Latitude,
+			Longitude:   region.Longitude,
 			Status:      model.StatusUnknown,
 			IPv4:        FamilyHealth{Enabled: in.IPv4Enabled},
 			IPv6:        FamilyHealth{Enabled: in.IPv6Enabled},

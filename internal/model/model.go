@@ -53,10 +53,15 @@ func (t Target) Supports(capability string) bool {
 // Region groups targets and carries the weighting and physical expectation used
 // when scoring.
 type Region struct {
-	ID            string   `json:"id"`
-	DisplayName   string   `json:"display_name"`
-	Weight        float64  `json:"weight"`
-	Local         bool     `json:"local"`
+	ID          string  `json:"id"`
+	DisplayName string  `json:"display_name"`
+	Weight      float64 `json:"weight"`
+	Local       bool    `json:"local"`
+	// Latitude and Longitude place the region on the dashboard globe. Nil when
+	// the region has no configured position, in which case it is listed but not
+	// plotted.
+	Latitude      *float64 `json:"latitude,omitempty"`
+	Longitude     *float64 `json:"longitude,omitempty"`
 	ExpectedRTTMS float64  `json:"expected_rtt_ms,omitempty"`
 	Targets       []Target `json:"targets"`
 }
@@ -102,6 +107,32 @@ type RouteHop struct {
 	Hostname string   `json:"hostname,omitempty"`
 	RTTMS    *float64 `json:"rtt_ms,omitempty"`
 	LossPct  *float64 `json:"loss_pct,omitempty"`
+
+	// Geo is the approximate position of the hop, filled in from a local GeoIP
+	// database when one is configured. It is absent for hops inside the local
+	// network, for hops that did not answer, and whenever the database has no
+	// record. Positions for backbone routers are frequently wrong -- see the
+	// geoip package -- so Geo.Confidence must be respected when displaying it.
+	Geo *HopGeo `json:"geo,omitempty"`
+}
+
+// HopGeo is the subset of a GeoIP lookup worth storing against a hop. It
+// mirrors geoip.Location but lives here so that the model package does not
+// depend on the GeoIP implementation.
+type HopGeo struct {
+	Latitude    *float64 `json:"latitude,omitempty"`
+	Longitude   *float64 `json:"longitude,omitempty"`
+	City        string   `json:"city,omitempty"`
+	Country     string   `json:"country,omitempty"`
+	CountryName string   `json:"country_name,omitempty"`
+	ASN         uint     `json:"asn,omitempty"`
+	Org         string   `json:"org,omitempty"`
+	Confidence  string   `json:"confidence,omitempty"`
+}
+
+// HasPosition reports whether the hop can be plotted on the globe.
+func (g *HopGeo) HasPosition() bool {
+	return g != nil && g.Latitude != nil && g.Longitude != nil
 }
 
 type Route struct {

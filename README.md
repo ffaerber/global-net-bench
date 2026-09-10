@@ -227,6 +227,8 @@ site:
 regions:
   - id: asia-japan
     display_name: Tokyo
+    latitude: 35.68       # optional; places the region on the globe
+    longitude: 139.69
     weight: 1.0
     expected_rtt_ms: 200
     targets:
@@ -242,6 +244,54 @@ not rely on ping alone. For the most accurate numbers, point the targets at
 hosts you control in each region.
 
 Unknown configuration keys are rejected at startup rather than silently ignored.
+
+## The globe
+
+The Overview page draws an interactive globe: drag to rotate, click a region to
+open its detail. Each region appears where you place it with `latitude` and
+`longitude`, coloured by its current status, with an arc from the region marked
+`local: true`. A region without coordinates is still measured — it just is not
+plotted, and the dashboard says how many are missing.
+
+The globe is drawn on a canvas from a vendored 1:110m land outline, so it needs
+no map tiles, no API key and no Internet access at all.
+
+### Traceroute hops on the map
+
+With `geoip` enabled, the Routes page plots the path as well. **There is no GPS
+in IP routing**: a traceroute returns addresses, and turning those into
+positions is inference from a database. It is right often enough to be useful
+and wrong often enough to matter, so the dashboard is explicit about what it
+does not know:
+
+| Drawn as | Means |
+| --- | --- |
+| Solid line | Consecutive hops, both located |
+| Dashed line | A gap — hops in between could not be placed, so the path between them is an assumption |
+| Filled dot | City-level position |
+| Hollow dot | Country-level only; the country is known, the position inside it is not |
+
+Hops on your own LAN, hops behind carrier-grade NAT, and hops that never
+answered are not plotted at all, and the caption counts them. Backbone routers
+in particular tend to resolve to wherever their address block was registered
+rather than where the hardware sits, which is why a path can appear to detour
+through a country it never touched.
+
+Enable it by pointing at local database files — nothing about your routes
+leaves the machine:
+
+```yaml
+geoip:
+  enabled: true
+  city_db: /data/geoip/dbip-city-lite.mmdb
+  asn_db: /data/geoip/dbip-asn-lite.mmdb
+```
+
+No database ships with GlobalNetBench. [DB-IP
+Lite](https://db-ip.com/db/lite.php) needs no account; MaxMind's GeoLite2 is
+more accurate but wants a free licence key. Either works — both are MaxMind-format
+`.mmdb`. A configured file that does not exist fails at startup rather than
+leaving you with a silently empty map.
 
 ## Development
 
@@ -292,6 +342,7 @@ rather than getting as far as a build and then failing at the push.
 ## Roadmap
 
 - **v0.2** — remote probe agents, iperf-style bandwidth tests, reverse and
-  bidirectional testing, GeoIP/ASN enrichment, world map, alerting.
+  bidirectional testing, alerting. GeoIP/ASN enrichment and the world map have
+  landed early; see [The globe](#the-globe).
 - **v0.3** — anomaly detection, route correlation, ISP comparison, multi-WAN and
   multi-site comparison.

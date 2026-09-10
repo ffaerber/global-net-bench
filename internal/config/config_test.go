@@ -141,6 +141,36 @@ func TestValidationErrors(t *testing.T) {
 			body: "network:\n  ipv4: true\nnonsense: true\nregions:\n  - id: a\n    targets:\n      - hostname: a.example\n",
 			want: "field nonsense not found",
 		},
+		{
+			name: "latitude without longitude",
+			body: "network:\n  ipv4: true\nregions:\n  - id: a\n    latitude: 50.1\n    targets:\n      - hostname: a.example\n",
+			want: "latitude and longitude must be set together",
+		},
+		{
+			name: "longitude without latitude",
+			body: "network:\n  ipv4: true\nregions:\n  - id: a\n    longitude: 8.7\n    targets:\n      - hostname: a.example\n",
+			want: "latitude and longitude must be set together",
+		},
+		{
+			name: "latitude out of range",
+			body: "network:\n  ipv4: true\nregions:\n  - id: a\n    latitude: 91\n    longitude: 8.7\n    targets:\n      - hostname: a.example\n",
+			want: "outside -90..90",
+		},
+		{
+			name: "longitude out of range",
+			body: "network:\n  ipv4: true\nregions:\n  - id: a\n    latitude: 50.1\n    longitude: 181\n    targets:\n      - hostname: a.example\n",
+			want: "outside -180..180",
+		},
+		{
+			name: "geoip enabled with no database",
+			body: "network:\n  ipv4: true\ngeoip:\n  enabled: true\nregions:\n  - id: a\n    targets:\n      - hostname: a.example\n",
+			want: "set geoip.city_db",
+		},
+		{
+			name: "geoip database missing from disk",
+			body: "network:\n  ipv4: true\ngeoip:\n  enabled: true\n  city_db: /nonexistent/city.mmdb\nregions:\n  - id: a\n    targets:\n      - hostname: a.example\n",
+			want: "geoip.city_db",
+		},
 	}
 
 	for _, tc := range cases {
@@ -190,5 +220,40 @@ func TestExampleConfigIsValid(t *testing.T) {
 			t.Errorf("region %s has %d target(s); the example should show at least two per region",
 				region.ID, len(region.Targets))
 		}
+		// Without coordinates the shipped example would start up with an empty
+		// globe, which reads as a broken feature rather than an unconfigured one.
+		if region.Latitude == nil || region.Longitude == nil {
+			t.Errorf("region %s has no coordinates; every example region should be plottable", region.ID)
+		}
+	}
+}
+
+// Coordinates are optional: a region without them is still measured, it just
+// does not appear on the globe. 0,0 is a legitimate position and must survive.
+func TestRegionCoordinatesAreOptional(t *testing.T) {
+	body := "network:\n  ipv4: true\nregions:\n" +
+		"  - id: placed\n    latitude: 50.11\n    longitude: 8.68\n    targets:\n      - hostname: a.example\n" +
+		"  - id: unplaced\n    targets:\n      - hostname: b.example\n" +
+		"  - id: nullisland\n    latitude: 0\n    longitude: 0\n    targets:\n      - hostname: c.example\n"
+
+	cfg, err := Load(writeConfig(t, body))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	regions := cfg.ModelRegions()
+	if len(regions) != 3 {
+		t.Fatalf("got %d regions, want 3", len(regions))
+	}
+	if regions[0].Latitude == nil || *regions[0].Latitude != 50.11 {
+		t.Errorf("placed region latitude = %v, want 50.11", regions[0].Latitude)
+	}
+	if regions[1].Latitude != nil || regions[1].Longitude != nil {
+		t.Errorf("unplaced region should carry no coordinates, got %v,%v", regions[1].Latitude, regions[1].Longitude)
+	}
+	if regions[2].Latitude == nil || regions[2].Longitude == nil {
+		t.Fatal("0,0 must be preserved rather than treated as absent")
+	}
+	if *regions[2].Latitude != 0 || *regions[2].Longitude != 0 {
+		t.Errorf("null island = %v,%v, want 0,0", *regions[2].Latitude, *regions[2].Longitude)
 	}
 }

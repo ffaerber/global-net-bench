@@ -61,7 +61,11 @@ prometheus:
 	}
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	testEngine := engine.New(cfg, st, bus.New(), log)
+	testEngine, err := engine.New(cfg, st, bus.New(), log)
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	t.Cleanup(func() { testEngine.Close() })
 	return New(cfg, testEngine, st, bus.New(), log, "test").Handler(), st, cfg
 }
 

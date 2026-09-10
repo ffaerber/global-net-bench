@@ -58,6 +58,20 @@
       </div>
     </div>
 
+    <h2>World map</h2>
+    <div class="globe-panel">
+      <div id="overview-globe" class="globe-holder"></div>
+      <div class="globe-legend">
+        <span class="globe-hint">Drag to rotate. Click a region for detail.</span>
+        <span class="legend-item"><i class="swatch status-excellent"></i>excellent</span>
+        <span class="legend-item"><i class="swatch status-good"></i>good</span>
+        <span class="legend-item"><i class="swatch status-fair"></i>fair</span>
+        <span class="legend-item"><i class="swatch status-degraded"></i>degraded</span>
+        <span class="legend-item"><i class="swatch status-down"></i>down</span>
+      </div>
+      <p class="globe-note" id="overview-globe-note" hidden></p>
+    </div>
+
     <h2>Regional health</h2>
     <div id="region-map" class="region-map"></div>
 
@@ -92,6 +106,10 @@
       <label>Target <select id="route-target"></select></label>
       <label>Family <select id="route-family"><option value="">any</option><option value="ipv4">IPv4</option><option value="ipv6">IPv6</option></select></label>
       <button id="route-refresh">Refresh</button>
+    </div>
+    <div class="globe-panel">
+      <div id="route-globe" class="globe-holder"></div>
+      <p class="globe-note" id="route-globe-note" hidden></p>
     </div>
     <div id="routes-content"></div>
   </section>
@@ -149,6 +167,7 @@
   </section>
 </main>
 
+<script src="/globe.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

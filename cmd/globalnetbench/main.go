@@ -70,7 +70,11 @@ func run() error {
 	}
 
 	events := bus.New()
-	testEngine := engine.New(cfg, st, events, log)
+	testEngine, err := engine.New(cfg, st, events, log)
+	if err != nil {
+		return fmt.Errorf("start test engine: %w", err)
+	}
+	defer testEngine.Close()
 
 	caps := testEngine.Capabilities()
 	if !caps.ICMP {

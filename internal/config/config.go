@@ -45,8 +45,18 @@ type Config struct {
 	Database   Database   `yaml:"database"`
 	Retention  Retention  `yaml:"retention"`
 	Prometheus Prometheus `yaml:"prometheus"`
+	GeoIP      GeoIP      `yaml:"geoip"`
 	Scoring    Scoring    `yaml:"scoring"`
 	Thresholds Thresholds `yaml:"thresholds"`
+}
+
+// GeoIP points at local MaxMind-format databases used to place traceroute hops
+// on the globe. Both files are optional and are looked up locally, so enabling
+// this sends nothing to a third party.
+type GeoIP struct {
+	Enabled bool   `yaml:"enabled"`
+	CityDB  string `yaml:"city_db"`
+	ASNDB   string `yaml:"asn_db"`
 }
 
 // Thresholds decide when a measurement becomes an event. Latency is judged
@@ -89,10 +99,15 @@ type Network struct {
 }
 
 type Region struct {
-	ID            string   `yaml:"id"`
-	DisplayName   string   `yaml:"display_name"`
-	Weight        float64  `yaml:"weight"`
-	Local         bool     `yaml:"local"`
+	ID          string  `yaml:"id"`
+	DisplayName string  `yaml:"display_name"`
+	Weight      float64 `yaml:"weight"`
+	Local       bool    `yaml:"local"`
+	// Latitude and Longitude place the region on the dashboard globe. Both are
+	// pointers so that "not configured" is distinguishable from a deliberate
+	// 0,0 in the Gulf of Guinea.
+	Latitude      *float64 `yaml:"latitude"`
+	Longitude     *float64 `yaml:"longitude"`
 	ExpectedRTTMS float64  `yaml:"expected_rtt_ms"`
 	Targets       []Target `yaml:"targets"`
 }
@@ -294,6 +309,24 @@ func (c *Config) validate() error {
 		return fmt.Errorf("database.dsn: required for postgres")
 	}
 
+	if c.GeoIP.Enabled {
+		if c.GeoIP.CityDB == "" && c.GeoIP.ASNDB == "" {
+			return fmt.Errorf("geoip.enabled: set geoip.city_db and/or geoip.asn_db, or disable geoip")
+		}
+		// Failing here beats starting up and quietly drawing an empty map.
+		for _, db := range []struct{ field, path string }{
+			{"geoip.city_db", c.GeoIP.CityDB},
+			{"geoip.asn_db", c.GeoIP.ASNDB},
+		} {
+			if db.path == "" {
+				continue
+			}
+			if _, err := os.Stat(db.path); err != nil {
+				return fmt.Errorf("%s: %w", db.field, err)
+			}
+		}
+	}
+
 	seenRegion := map[string]bool{}
 	seenTarget := map[string]bool{}
 	for _, r := range c.Regions {
@@ -306,6 +339,15 @@ func (c *Config) validate() error {
 		seenRegion[r.ID] = true
 		if len(r.Targets) == 0 {
 			return fmt.Errorf("region %s: at least one target is required", r.ID)
+		}
+		if (r.Latitude == nil) != (r.Longitude == nil) {
+			return fmt.Errorf("region %s: latitude and longitude must be set together", r.ID)
+		}
+		if r.Latitude != nil && (*r.Latitude < -90 || *r.Latitude > 90) {
+			return fmt.Errorf("region %s: latitude %g is outside -90..90", r.ID, *r.Latitude)
+		}
+		if r.Longitude != nil && (*r.Longitude < -180 || *r.Longitude > 180) {
+			return fmt.Errorf("region %s: longitude %g is outside -180..180", r.ID, *r.Longitude)
 		}
 		for _, t := range r.Targets {
 			if seenTarget[t.ID] {
@@ -340,6 +382,8 @@ func (c *Config) ModelRegions() []model.Region {
 			DisplayName:   r.DisplayName,
 			Weight:        r.Weight,
 			Local:         r.Local,
+			Latitude:      r.Latitude,
+			Longitude:     r.Longitude,
 			ExpectedRTTMS: r.ExpectedRTTMS,
 		}
 		for _, t := range r.Targets {
