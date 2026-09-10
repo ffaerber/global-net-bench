@@ -5,24 +5,24 @@ const state = {
   status: null,
   targets: [],
   selectedRegion: null,
-  globes: {},
-  focusedGlobe: false,
+  maps: {},
+  replayPlaying: true,
 };
 
-// Globes are built on first use so the land outline is only fetched by someone
+// Maps are built on first use so the land outline is only fetched by someone
 // who actually opens a page showing one.
-function globeFor(id, containerId) {
-  if (!state.globes[id]) {
+function mapFor(id, containerId) {
+  if (!state.maps[id]) {
     const container = $(containerId);
     if (!container) return null;
-    const globe = new Globe(container);
-    globe.onRegionClick = (regionId) => {
+    const worldMap = new WorldMap(container);
+    worldMap.onRegionClick = (regionId) => {
       state.selectedRegion = regionId;
       showPage('regions');
     };
-    state.globes[id] = globe;
+    state.maps[id] = worldMap;
   }
-  return state.globes[id];
+  return state.maps[id];
 }
 
 const $ = (id) => document.getElementById(id);
@@ -99,6 +99,9 @@ const pageLoaders = {};
 function showPage(name) {
   document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.page === name));
   document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === `page-${name}`));
+  // A map on a hidden page must stop animating; nothing else notices the page
+  // switch, and an off-screen replay would burn a frame budget for nobody.
+  for (const worldMap of Object.values(state.maps)) worldMap.syncAnimation();
   if (pageLoaders[name]) pageLoaders[name]();
 }
 
@@ -137,7 +140,7 @@ function renderSnapshot(snapshot) {
   $('route-changes').textContent = snapshot.route_changes_today ?? 0;
 
   renderRegionMap(snapshot.regions || []);
-  renderGlobe(snapshot.regions || []);
+  renderWorldMap(snapshot.regions || []);
   renderResolvers(snapshot.resolvers || []);
   renderRegionsTable(snapshot.regions || []);
 
@@ -179,14 +182,14 @@ function renderRegionMap(regions) {
   }
 }
 
-function renderGlobe(regions) {
-  const globe = globeFor('overview', 'overview-globe');
-  if (!globe) return;
-  globe.setRegions(regions);
+function renderWorldMap(regions) {
+  const worldMap = mapFor('overview', 'overview-map');
+  if (!worldMap) return;
+  worldMap.setRegions(regions);
 
   const plotted = regions.filter((r) => r.latitude !== null && r.latitude !== undefined &&
     r.longitude !== null && r.longitude !== undefined);
-  const note = $('overview-globe-note');
+  const note = $('overview-map-note');
   const missing = regions.length - plotted.length;
   if (missing > 0) {
     note.textContent = missing === regions.length
@@ -195,14 +198,6 @@ function renderGlobe(regions) {
     note.hidden = false;
   } else {
     note.hidden = true;
-  }
-
-  // Swing the globe round to the local site once, the first time there is
-  // something to look at.
-  if (!state.focusedGlobe && plotted.length) {
-    const local = plotted.find((r) => r.local) || plotted[0];
-    globe.focusOn(local.longitude, local.latitude);
-    state.focusedGlobe = true;
   }
 }
 
@@ -342,20 +337,52 @@ pageLoaders.events = async () => {
 
 /* ---------- routes ---------- */
 
-// renderRouteGlobe plots the most recent trace. It is deliberately explicit
-// about how much of the path it could not place: an unlabelled gap would read
-// as a route that went nowhere, and a confidently drawn line through a
-// mislocated backbone router is worse than no line at all.
-function renderRouteGlobe(route) {
-  const globe = globeFor('routes', 'route-globe');
-  if (!globe) return;
-  const note = $('route-globe-note');
+function resetReplayReadout() {
+  $('replay-readout').textContent = '—';
+  $('replay-fill').style.width = '0%';
+}
+
+// updateReplayReadout is called on every animation frame, so it touches the DOM
+// only when a value actually changed.
+let lastReadout = '';
+function updateReplayReadout(progress) {
+  const fill = $('replay-fill');
+  const readout = $('replay-readout');
+  if (!fill || !readout) return;
+
+  const pct = progress.totalMs ? (progress.cumulativeMs / progress.totalMs) * 100 : 0;
+  fill.style.width = `${Math.max(0, Math.min(100, pct)).toFixed(1)}%`;
+
+  const hop = progress.hop;
+  const where = hop && hop.geo
+    ? [hop.geo.city, hop.geo.country_name || hop.geo.country].filter(Boolean).join(', ')
+    : '';
+  const text = hop
+    ? `hop ${hop.hop} · ${where || hop.ip || '*'} · +${progress.legMs.toFixed(1)} ms · ${progress.cumulativeMs.toFixed(1)} ms total`
+    : '—';
+  if (text !== lastReadout) {
+    readout.textContent = text;
+    lastReadout = text;
+  }
+}
+
+// renderRouteMap plots the most recent trace and replays it as an animation. It
+// is deliberately explicit about how much of the path it could not place: an
+// unlabelled gap would read as a route that went nowhere, and a confidently
+// drawn line through a mislocated backbone router is worse than no line at all.
+function renderRouteMap(route) {
+  const worldMap = mapFor('routes', 'route-map');
+  if (!worldMap) return;
+  const note = $('route-map-note');
 
   const hops = (route && route.hops) || [];
   const located = hops.filter((h) => h.geo && h.geo.latitude !== null && h.geo.latitude !== undefined &&
     h.geo.longitude !== null && h.geo.longitude !== undefined);
-  globe.setRegions(state.snapshot ? state.snapshot.regions || [] : []);
-  globe.setRoute(located.length ? located : null);
+  worldMap.setRegions(state.snapshot ? state.snapshot.regions || [] : []);
+  worldMap.onProgress = updateReplayReadout;
+  worldMap.setRoute(located.length ? located : null);
+  worldMap.setPlaying(state.replayPlaying);
+  if (!located.length) resetReplayReadout();
 
   if (!hops.length) {
     note.textContent = 'No trace to plot yet.';
@@ -388,11 +415,11 @@ function renderRoutes(routes) {
   const container = $('routes-content');
   clear(container);
   if (!routes.length) {
-    renderRouteGlobe(null);
+    renderRouteMap(null);
     container.appendChild(el('div', 'empty', 'No routes recorded yet. Route tests need a raw ICMP socket (CAP_NET_RAW).'));
     return;
   }
-  renderRouteGlobe(routes[0]);
+  renderRouteMap(routes[0]);
 
   // Group by target and family so repeated traces collapse into one card each.
   const seen = new Set();
@@ -745,6 +772,14 @@ for (const id of ['route-target', 'route-family']) {
 for (const id of ['event-type', 'event-since']) {
   $(id).addEventListener('change', () => pageLoaders.events());
 }
+
+$('replay-toggle').addEventListener('click', () => {
+  state.replayPlaying = !state.replayPlaying;
+  const button = $('replay-toggle');
+  button.textContent = state.replayPlaying ? 'Pause' : 'Play';
+  button.setAttribute('aria-pressed', String(state.replayPlaying));
+  if (state.maps.routes) state.maps.routes.setPlaying(state.replayPlaying);
+});
 
 async function init() {
   populateEventTypes();

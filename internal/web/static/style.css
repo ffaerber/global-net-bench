@@ -13,11 +13,11 @@
   --down: #f85149;
   --unknown: #6e7681;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  /* The globe needs more separation between sea and land than the general
+  /* The map needs more separation between sea and land than the general
      surface colours give, or the continents disappear into the background. */
-  --globe-ocean: #131b26;
-  --globe-land: #33404e;
-  --globe-grid: #2a3542;
+  --map-ocean: #131b26;
+  --map-land: #33404e;
+  --map-grid: #2a3542;
 }
 
 @media (prefers-color-scheme: light) {
@@ -29,9 +29,9 @@
     --text: #1f2328;
     --muted: #59636e;
     --unknown: #8c959f;
-    --globe-ocean: #e8eef5;
-    --globe-land: #b3c0cf;
-    --globe-grid: #cfd8e3;
+    --map-ocean: #e8eef5;
+    --map-land: #b3c0cf;
+    --map-grid: #cfd8e3;
   }
 }
 
@@ -163,26 +163,29 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 
 .empty { color: var(--muted); padding: 18px; text-align: center; background: var(--panel); border: 1px dashed var(--border); border-radius: 10px; }
 
-/* --- Globe ---------------------------------------------------------------- */
+/* --- World map ---------------------------------------------------------------- */
 
-.globe-panel {
+.map-panel {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
 }
 
-.globe-holder {
+.map-holder {
   position: relative;
   width: 100%;
-  height: 440px;
-  touch-action: none; /* let a drag rotate the globe instead of scrolling */
+  /* A 2:1 equirectangular map; the canvas letterboxes itself inside this. */
+  aspect-ratio: 2 / 1;
+  max-height: 480px;
 }
 
-.globe-canvas { display: block; cursor: grab; }
-.globe-canvas.dragging { cursor: grabbing; }
+/* Absolute so the canvas cannot feed its own height back into the container:
+   in flow, a canvas sized from a previous layout keeps the box that tall and
+   aspect-ratio yields to it, which latches the map at a stale height. */
+.map-canvas { display: block; position: absolute; inset: 0; }
 
-.globe-tooltip {
+.map-tooltip {
   position: absolute;
   pointer-events: none;
   background: var(--panel-2);
@@ -195,7 +198,7 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   z-index: 2;
 }
 
-.globe-legend {
+.map-legend {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -205,7 +208,7 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
   color: var(--muted);
 }
 
-.globe-hint { margin-right: auto; }
+.map-hint { margin-right: auto; }
 
 .legend-item { display: inline-flex; align-items: center; gap: 5px; }
 
@@ -216,15 +219,53 @@ select { background: var(--panel); color: var(--text); border: 1px solid var(--b
 .swatch.status-degraded { background: var(--degraded); }
 .swatch.status-down { background: var(--down); }
 
-.globe-note {
+.map-note {
   margin: 10px 0 0;
   font-size: 11px;
   color: var(--muted);
   line-height: 1.5;
 }
 
+.replay-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.replay-toggle { min-width: 68px; }
+
+.replay-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.replay-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+}
+
+.replay-readout {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  min-width: 210px;
+  text-align: right;
+}
+
 @media (max-width: 640px) {
   main { padding: 14px; }
   .score-value { font-size: 34px; }
-  .globe-holder { height: 320px; }
+  .replay-bar { flex-wrap: wrap; }
+  .replay-readout { min-width: 0; text-align: left; width: 100%; white-space: normal; }
+  /* Four columns do not fit; the location moves onto its own line rather than
+     running off the edge. */
+  .hop { grid-template-columns: 26px minmax(0, 1fr) auto; column-gap: 8px; }
+  .hop .hop-geo { grid-column: 2 / -1; white-space: normal; }
 }

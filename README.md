@@ -227,7 +227,7 @@ site:
 regions:
   - id: asia-japan
     display_name: Tokyo
-    latitude: 35.68       # optional; places the region on the globe
+    latitude: 35.68       # optional; places the region on the map
     longitude: 139.69
     weight: 1.0
     expected_rtt_ms: 200
@@ -245,16 +245,36 @@ hosts you control in each region.
 
 Unknown configuration keys are rejected at startup rather than silently ignored.
 
-## The globe
+## The map
 
-The Overview page draws an interactive globe: drag to rotate, click a region to
-open its detail. Each region appears where you place it with `latitude` and
-`longitude`, coloured by its current status, with an arc from the region marked
+The Overview page draws a world map: click a region to open its detail. Each
+region appears where you place it with `latitude` and `longitude`, coloured by
+its current status, with a great-circle arc from the region marked
 `local: true`. A region without coordinates is still measured — it just is not
 plotted, and the dashboard says how many are missing.
 
-The globe is drawn on a canvas from a vendored 1:110m land outline, so it needs
-no map tiles, no API key and no Internet access at all.
+The map is drawn on a canvas from a vendored 1:110m land outline, so it needs no
+map tiles, no API key and no Internet access at all.
+
+### Replaying a trace
+
+The Routes page replays the most recent trace on a loop: a pulse travels the
+path hop by hop, and each leg takes time in proportion to what that hop actually
+cost. A slow transatlantic leg visibly drags; a cheap one snaps past. The
+readout names the current hop with its incremental and cumulative time.
+
+A traceroute RTT is the round trip from you to that hop, so it is cumulative;
+the time attributable to one leg is the difference between consecutive hops.
+That difference sometimes comes out negative, because a busy router
+deprioritises the ICMP replies it generates itself while still forwarding
+traffic normally, so a later hop can report a *lower* RTT than the one before
+it. Those legs are clamped to a floor rather than dropped — the hop is still on
+the path, it just cannot be timed.
+
+The whole replay is stretched to a few seconds; a real 200 ms trace played at
+life speed would be a blink. Relative durations are preserved, so what you are
+comparing is still honest. Use **Pause** to stop it; it also stops on its own
+when the tab is in the background or you are on another page.
 
 ### Traceroute hops on the map
 
@@ -343,6 +363,6 @@ rather than getting as far as a build and then failing at the push.
 
 - **v0.2** — remote probe agents, iperf-style bandwidth tests, reverse and
   bidirectional testing, alerting. GeoIP/ASN enrichment and the world map have
-  landed early; see [The globe](#the-globe).
+  landed early; see [The map](#the-map).
 - **v0.3** — anomaly detection, route correlation, ISP comparison, multi-WAN and
   multi-site comparison.
