@@ -47,15 +47,18 @@ an ARM VPS works as well as an x86 server:
 
 | Tag | What it is |
 | --- | --- |
-| `latest` | The most recent tagged release |
-| `0.1.0`, `0.1` | A specific release |
-| `edge` | The current `main` branch |
+| `latest` | The most recent `main` build |
+| `0fadf33` | The build of that exact commit |
 
-Pin a release rather than tracking `latest` if you care about reproducibility:
+There are no release version numbers. Every build is tagged with its short
+commit SHA, which is also what the binary reports as its version — so whatever
+`/api/v1/status` shows can be traced straight back to the source, and pinned:
 
 ```bash
-GNB_IMAGE=ffaerber/globalnetbench:0.1.0 docker compose up -d
+GNB_IMAGE=ffaerber/globalnetbench:0fadf33 docker compose up -d
 ```
+
+Pin a SHA rather than tracking `latest` if you care about reproducibility.
 
 ### Docker Compose from source
 
@@ -279,16 +282,9 @@ Configure these in **Settings → Secrets and variables → Actions**:
 Create the token at Docker Hub → Account Settings → Personal access tokens with
 **Read & Write** scope.
 
-What gets published:
-
-- push to `main` → `edge`
-- push of a `v*` tag → the version tags plus `latest`
-
-So cutting a release is:
-
-```bash
-git tag v0.1.0 && git push origin v0.1.0
-```
+Every push to `main` publishes two tags: the short commit SHA and `latest`.
+There is no release process and nothing to tag by hand — merging to `main` is
+what ships.
 
 The workflow fails early with a clear message if the credentials are missing,
 rather than getting as far as a build and then failing at the push.

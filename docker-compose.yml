@@ -2,9 +2,7 @@ services:
   globalnetbench:
     build:
       context: .
-      args:
-        VERSION: "0.1.0"
-    image: globalnetbench:0.1.0
+    image: globalnetbench:dev
     container_name: globalnetbench
     restart: unless-stopped
     ports:

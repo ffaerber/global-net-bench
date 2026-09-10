@@ -22,8 +22,9 @@ import (
 	"github.com/ffaerber/global-net-bench/internal/store"
 )
 
-// version is overridden at build time with -ldflags "-X main.version=...".
-var version = "0.1.0"
+// version is the short commit SHA of the build, set at build time with
+// -ldflags "-X main.version=...". Local builds report "dev".
+var version = "dev"
 
 func main() {
 	if err := run(); err != nil {

@@ -16,8 +16,8 @@
 
 services:
   globalnetbench:
-    # Override with GNB_IMAGE to pull from a different repository or pin a
-    # release, e.g. GNB_IMAGE=ffaerber/globalnetbench:0.1.0
+    # Override with GNB_IMAGE to pull from a different repository or to pin a
+    # commit, e.g. GNB_IMAGE=ffaerber/globalnetbench:0fadf33
     image: ${GNB_IMAGE:-ffaerber/globalnetbench:latest}
     container_name: globalnetbench
     restart: unless-stopped
