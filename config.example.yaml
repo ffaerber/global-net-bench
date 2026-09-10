@@ -1,0 +1,226 @@
+# GlobalNetBench configuration.
+#
+# Copy to config.yaml and edit. Every value below is optional except `regions`;
+# the defaults shown are what the binary applies when a key is omitted.
+
+server:
+  listen: 0.0.0.0:8080
+
+# Identifies which machine, WAN or interface produced these measurements, so
+# results from several vantage points can be compared later.
+site:
+  id: default
+  name: Home
+
+monitoring:
+  health_interval: 60s    # reachability + latency, cheap
+  quality_interval: 5m    # longer ping burst for jitter and loss
+  route_interval: 15m     # traceroute and route fingerprinting
+  concurrency: 6          # targets probed at once
+
+network:
+  ipv4: true
+  ipv6: true
+  public_ip_endpoint_v4: https://api.ipify.org
+  public_ip_endpoint_v6: https://api6.ipify.org
+
+# --- Regions -----------------------------------------------------------------
+#
+# Give every region at least two targets so one broken host cannot make a whole
+# region look unhealthy. The AWS endpoints below are genuinely located in the
+# region they name and answer TCP/443 and HTTPS. Most cloud endpoints filter
+# ICMP, which is exactly why TCP and HTTPS are measured as well.
+#
+# For the most accurate results, replace these with your own probe hosts (see
+# the roadmap for the v0.2 probe agent).
+
+regions:
+  # Uncomment and point at your own router/ISP gateway to get a Local ISP score.
+  # - id: local
+  #   display_name: Local network
+  #   local: true
+  #   weight: 1.0
+  #   expected_rtt_ms: 5
+  #   targets:
+  #     - id: gateway
+  #       hostname: 192.168.1.1
+  #       ipv6: false
+  #       capabilities: [icmp, traceroute]
+
+  - id: eu-central
+    display_name: Frankfurt
+    weight: 1.0
+    expected_rtt_ms: 40
+    targets:
+      - id: fra-ec2
+        hostname: ec2.eu-central-1.amazonaws.com
+      - id: fra-s3
+        hostname: s3.eu-central-1.amazonaws.com
+
+  - id: eu-north
+    display_name: Stockholm
+    weight: 1.0
+    expected_rtt_ms: 60
+    targets:
+      - id: arn-ec2
+        hostname: ec2.eu-north-1.amazonaws.com
+      - id: arn-s3
+        hostname: s3.eu-north-1.amazonaws.com
+
+  - id: uk
+    display_name: London
+    weight: 1.0
+    expected_rtt_ms: 55
+    targets:
+      - id: lhr-ec2
+        hostname: ec2.eu-west-2.amazonaws.com
+      - id: lhr-s3
+        hostname: s3.eu-west-2.amazonaws.com
+
+  - id: na-east
+    display_name: North America East
+    weight: 1.0
+    expected_rtt_ms: 120
+    targets:
+      - id: iad-ec2
+        hostname: ec2.us-east-1.amazonaws.com
+      - id: iad-s3
+        hostname: s3.us-east-1.amazonaws.com
+
+  - id: na-west
+    display_name: North America West
+    weight: 1.0
+    expected_rtt_ms: 170
+    targets:
+      - id: sfo-ec2
+        hostname: ec2.us-west-1.amazonaws.com
+      - id: sfo-s3
+        hostname: s3.us-west-1.amazonaws.com
+
+  - id: south-america
+    display_name: São Paulo
+    weight: 1.0
+    expected_rtt_ms: 220
+    targets:
+      - id: gru-ec2
+        hostname: ec2.sa-east-1.amazonaws.com
+      - id: gru-s3
+        hostname: s3.sa-east-1.amazonaws.com
+
+  - id: africa
+    display_name: Cape Town
+    weight: 1.0
+    expected_rtt_ms: 180
+    targets:
+      - id: cpt-ec2
+        hostname: ec2.af-south-1.amazonaws.com
+      - id: cpt-s3
+        hostname: s3.af-south-1.amazonaws.com
+
+  - id: middle-east
+    display_name: Bahrain
+    weight: 1.0
+    expected_rtt_ms: 100
+    targets:
+      - id: bah-ec2
+        hostname: ec2.me-south-1.amazonaws.com
+      - id: bah-s3
+        hostname: s3.me-south-1.amazonaws.com
+
+  - id: asia-japan
+    display_name: Tokyo
+    weight: 1.0
+    expected_rtt_ms: 200
+    targets:
+      - id: nrt-ec2
+        hostname: ec2.ap-northeast-1.amazonaws.com
+      - id: nrt-s3
+        hostname: s3.ap-northeast-1.amazonaws.com
+
+  - id: asia-southeast
+    display_name: Singapore
+    weight: 1.0
+    expected_rtt_ms: 170
+    targets:
+      - id: sin-ec2
+        hostname: ec2.ap-southeast-1.amazonaws.com
+      - id: sin-s3
+        hostname: s3.ap-southeast-1.amazonaws.com
+
+  - id: oceania
+    display_name: Sydney
+    weight: 1.0
+    expected_rtt_ms: 280
+    targets:
+      - id: syd-ec2
+        hostname: ec2.ap-southeast-2.amazonaws.com
+      - id: syd-s3
+        hostname: s3.ap-southeast-2.amazonaws.com
+
+# --- Tests -------------------------------------------------------------------
+
+tests:
+  icmp:
+    enabled: true
+    packets: 10          # health mode
+    quality_packets: 50  # quality mode, for jitter and loss
+    spacing: 100ms
+    timeout: 2s
+
+  tcp:
+    enabled: true
+    ports: [443]
+    timeout: 5s
+
+  https:
+    enabled: true
+    timeout: 10s
+    max_bytes: 65536
+
+  dns:
+    enabled: true
+    timeout: 3s
+    query_name: www.example.com.
+    resolvers:
+      - name: Cloudflare
+        address: 1.1.1.1
+      - name: Google
+        address: 8.8.8.8
+      - name: Quad9
+        address: 9.9.9.9
+
+  traceroute:
+    enabled: true
+    max_hops: 30
+    queries_per_hop: 2
+    timeout: 2s
+
+# --- Storage and output ------------------------------------------------------
+
+database:
+  type: sqlite          # sqlite or postgres
+  dsn: globalnetbench.db
+  # For PostgreSQL:
+  # type: postgres
+  # dsn: postgres://globalnetbench:globalnetbench@postgres:5432/globalnetbench?sslmode=disable
+
+retention:
+  raw_measurements: 720h  # 30 days
+  routes: 2160h           # 90 days
+  # Events are kept forever: they are the record of what actually happened.
+
+prometheus:
+  enabled: true
+
+# Latency is scored against each path's own learned baseline rather than an
+# absolute number, so a distant region is not penalised for being distant.
+scoring:
+  baseline_window: 168h      # 7 days
+  min_baseline_samples: 20
+
+thresholds:
+  packet_loss_warn: 0.02
+  packet_loss_critical: 0.10
+  jitter_warn_ms: 30
+  latency_spike_factor: 1.35
+  min_latency_delta_ms: 10
