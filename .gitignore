@@ -1,0 +1,9 @@
+# Local configuration and data
+config.yaml
+*.db
+*.db-shm
+*.db-wal
+
+# Build output
+/globalnetbench
+/dist/

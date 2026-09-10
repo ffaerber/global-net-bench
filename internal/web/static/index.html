@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GlobalNetBench</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>&#127760;</text></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="globe">&#127760;</span>
+    <div>
+      <h1>GlobalNetBench</h1>
+      <p class="subtitle" id="site-label">&nbsp;</p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <span class="live" id="live-indicator" title="Live update stream">
+      <span class="dot"></span><span id="live-text">connecting</span>
+    </span>
+    <button id="run-btn" class="primary">Run global benchmark</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-page="overview">Overview</button>
+  <button class="tab" data-page="regions">Regions</button>
+  <button class="tab" data-page="routes">Routes</button>
+  <button class="tab" data-page="history">History</button>
+  <button class="tab" data-page="events">Events</button>
+  <button class="tab" data-page="targets">Targets</button>
+</nav>
+
+<main>
+  <div id="banner" class="banner" hidden></div>
+
+  <section class="page active" id="page-overview">
+    <div class="score-row">
+      <div class="score-card big">
+        <div class="score-label">Global connectivity</div>
+        <div class="score-value" id="global-score">--</div>
+        <div class="score-status" id="global-status">no data yet</div>
+      </div>
+      <div class="score-card">
+        <div class="score-label">Local / ISP</div>
+        <div class="score-value" id="local-score">--</div>
+        <div class="score-status" id="local-status">not configured</div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat"><span class="stat-label">IPv4</span><span class="stat-value" id="ipv4-status">--</span></div>
+        <div class="stat"><span class="stat-label">IPv6</span><span class="stat-value" id="ipv6-status">--</span></div>
+        <div class="stat"><span class="stat-label">Packet loss</span><span class="stat-value" id="packet-loss">--</span></div>
+        <div class="stat"><span class="stat-label">Route changes today</span><span class="stat-value" id="route-changes">--</span></div>
+        <div class="stat"><span class="stat-label">Public IPv4</span><span class="stat-value" id="public-v4">--</span></div>
+        <div class="stat"><span class="stat-label">Public IPv6</span><span class="stat-value" id="public-v6">--</span></div>
+      </div>
+    </div>
+
+    <h2>Regional health</h2>
+    <div id="region-map" class="region-map"></div>
+
+    <h2>Resolvers</h2>
+    <div id="resolver-list" class="resolver-list"></div>
+
+    <h2>Recent events</h2>
+    <div id="overview-events" class="event-list"></div>
+  </section>
+
+  <section class="page" id="page-regions">
+    <p class="hint">
+      Latency is judged against each path's own learned baseline. A distant region
+      is not unhealthy merely for being far away.
+    </p>
+    <div class="table-wrap">
+      <table id="regions-table">
+        <thead>
+          <tr>
+            <th>Region</th><th>Score</th><th>RTT</th><th>Jitter</th><th>Loss</th>
+            <th>TCP connect</th><th>TTFB</th><th>IPv4</th><th>IPv6</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div id="region-detail"></div>
+  </section>
+
+  <section class="page" id="page-routes">
+    <div class="controls">
+      <label>Target <select id="route-target"></select></label>
+      <label>Family <select id="route-family"><option value="">any</option><option value="ipv4">IPv4</option><option value="ipv6">IPv6</option></select></label>
+      <button id="route-refresh">Refresh</button>
+    </div>
+    <div id="routes-content"></div>
+  </section>
+
+  <section class="page" id="page-history">
+    <div class="controls">
+      <label>Target <select id="history-target"></select></label>
+      <label>Protocol <select id="history-protocol">
+        <option value="icmp">ICMP</option>
+        <option value="tcp">TCP</option>
+        <option value="https">HTTPS</option>
+        <option value="dns">DNS</option>
+      </select></label>
+      <label>Family <select id="history-family"><option value="ipv4">IPv4</option><option value="ipv6">IPv6</option></select></label>
+      <label>Window <select id="history-since">
+        <option value="1h">1 hour</option>
+        <option value="6h">6 hours</option>
+        <option value="24h" selected>24 hours</option>
+        <option value="168h">7 days</option>
+      </select></label>
+      <button id="history-refresh">Refresh</button>
+    </div>
+    <div id="history-charts"></div>
+  </section>
+
+  <section class="page" id="page-events">
+    <div class="controls">
+      <label>Type <select id="event-type"><option value="">all</option></select></label>
+      <label>Window <select id="event-since">
+        <option value="1h">1 hour</option>
+        <option value="24h" selected>24 hours</option>
+        <option value="168h">7 days</option>
+        <option value="">everything</option>
+      </select></label>
+      <button id="event-refresh">Refresh</button>
+    </div>
+    <div id="events-content" class="event-list"></div>
+  </section>
+
+  <section class="page" id="page-targets">
+    <p class="hint">
+      Targets are defined in the configuration file and reloaded on restart.
+      Each region should keep at least two so one broken host cannot condemn a region.
+    </p>
+    <div class="table-wrap">
+      <table id="targets-table">
+        <thead><tr><th>Target</th><th>Region</th><th>Hostname</th><th>IPv4</th><th>IPv6</th><th>Capabilities</th><th>Ports</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <h2>Schedules</h2>
+    <div id="schedule-list" class="stat-grid"></div>
+    <h2>Engine capabilities</h2>
+    <div id="capabilities" class="stat-grid"></div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
