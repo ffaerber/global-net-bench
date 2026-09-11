@@ -94,14 +94,109 @@ function showBanner(message, tone) {
 
 /* ---------- navigation ---------- */
 
+// The dashboard is one page with tabs, so the current view has to live in the
+// URL: without it a reload always lands back on Overview, and there is no way
+// to send someone a link to the thing you are looking at. It goes in the hash
+// rather than the path because this is served as static files -- a real path
+// would 404 on reload until the server learned to rewrite it.
+//
+//   #/regions/eu-central
+//   #/routes?target=fra-s3&family=ipv4
+//   #/history?target=lhr-ec2&protocol=icmp&family=ipv4&since=24h
+//
+// Overview with no selection keeps the URL bare, so the plain hostname stays
+// the address of the dashboard.
+
+const PAGES = ['overview', 'regions', 'routes', 'history', 'events', 'targets'];
+
+// The controls each page restores from a link. Values are read from and written
+// to the <select>s themselves, so a link reproduces the exact query.
+const PAGE_FILTERS = {
+  routes: { target: 'route-target', family: 'route-family' },
+  history: {
+    target: 'history-target',
+    protocol: 'history-protocol',
+    family: 'history-family',
+    since: 'history-since',
+  },
+  events: { type: 'event-type', since: 'event-since' },
+};
+
 const pageLoaders = {};
 
-function showPage(name) {
+function activePage() {
+  const active = document.querySelector('.page.active');
+  return active ? active.id.replace(/^page-/, '') : 'overview';
+}
+
+function parseHash() {
+  const [path, query] = location.hash.replace(/^#\/?/, '').split('?');
+  const segments = path.split('/').filter(Boolean).map(decodeURIComponent);
+  return {
+    page: PAGES.includes(segments[0]) ? segments[0] : 'overview',
+    detail: segments[1] || null,
+    params: new URLSearchParams(query || ''),
+  };
+}
+
+function currentHash() {
+  const page = activePage();
+  if (page === 'overview') return '';
+
+  let path = page;
+  if (page === 'regions' && state.selectedRegion) path += `/${encodeURIComponent(state.selectedRegion)}`;
+
+  const params = new URLSearchParams();
+  for (const [key, id] of Object.entries(PAGE_FILTERS[page] || {})) {
+    const value = $(id).value;
+    if (value) params.set(key, value);
+  }
+  const query = params.toString();
+  return `#/${path}${query ? `?${query}` : ''}`;
+}
+
+// syncHash rewrites the address bar to match what is on screen. pushState is
+// used rather than assigning location.hash so that no hashchange fires back at
+// us; `replace` is for changes that are adjustments rather than navigation --
+// stepping Back through every dropdown fiddle would be useless.
+function syncHash({ replace = false } = {}) {
+  const hash = currentHash();
+  const url = hash || location.pathname + location.search;
+  if (hash === location.hash) return;
+  if (replace) history.replaceState(null, '', url);
+  else history.pushState(null, '', url);
+}
+
+// applyHash is the other direction: the URL wins. It runs on load and whenever
+// the history moves, so Back and Forward step through views the way they do on
+// a site with real pages.
+function applyHash() {
+  const { page, detail, params } = parseHash();
+
+  if (page === 'regions') state.selectedRegion = detail;
+  for (const [key, id] of Object.entries(PAGE_FILTERS[page] || {})) {
+    const value = params.get(key);
+    if (value === null) continue;
+    const select = $(id);
+    // A link naming a target this deployment does not have would otherwise
+    // select nothing and silently widen the query to everything.
+    if ([...select.options].some((option) => option.value === value)) select.value = value;
+  }
+
+  showPage(page, { url: false });
+  // Normalise: a link can name a filter this deployment does not have, and the
+  // address bar should say what is actually on screen rather than what was
+  // asked for.
+  syncHash({ replace: true });
+}
+
+function showPage(name, { url = true, replace = false } = {}) {
   document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.page === name));
   document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === `page-${name}`));
   // A map on a hidden page must stop animating; nothing else notices the page
   // switch, and an off-screen replay would burn a frame budget for nobody.
   for (const worldMap of Object.values(state.maps)) worldMap.syncAnimation();
+  if (url) syncHash({ replace });
   if (pageLoaders[name]) pageLoaders[name]();
 }
 
@@ -109,6 +204,11 @@ $('tabs').addEventListener('click', (event) => {
   const tab = event.target.closest('.tab');
   if (tab) showPage(tab.dataset.page);
 });
+
+// popstate covers Back and Forward; hashchange covers someone typing a hash
+// into the address bar, which pushState navigation never triggers.
+window.addEventListener('popstate', applyHash);
+window.addEventListener('hashchange', applyHash);
 
 /* ---------- overview ---------- */
 
@@ -259,6 +359,7 @@ function renderRegionsTable(regions) {
     row.className = 'clickable';
     row.addEventListener('click', () => {
       state.selectedRegion = state.selectedRegion === region.id ? null : region.id;
+      syncHash({ replace: true });
       renderRegionDetail();
     });
 
@@ -283,6 +384,10 @@ function renderRegionsTable(regions) {
 
   renderRegionDetail();
 }
+
+// The regions table is drawn from the snapshot, but the detail panel follows a
+// selection that a link can carry, so opening #/regions/<id> has to render it.
+pageLoaders.regions = () => renderRegionDetail();
 
 function renderRegionDetail() {
   const container = $('region-detail');
@@ -785,13 +890,13 @@ $('route-refresh').addEventListener('click', () => pageLoaders.routes());
 $('history-refresh').addEventListener('click', () => pageLoaders.history());
 $('event-refresh').addEventListener('click', () => pageLoaders.events());
 for (const id of ['history-target', 'history-protocol', 'history-family', 'history-since']) {
-  $(id).addEventListener('change', () => pageLoaders.history());
+  $(id).addEventListener('change', () => { syncHash({ replace: true }); pageLoaders.history(); });
 }
 for (const id of ['route-target', 'route-family']) {
-  $(id).addEventListener('change', () => pageLoaders.routes());
+  $(id).addEventListener('change', () => { syncHash({ replace: true }); pageLoaders.routes(); });
 }
 for (const id of ['event-type', 'event-since']) {
-  $(id).addEventListener('change', () => pageLoaders.events());
+  $(id).addEventListener('change', () => { syncHash({ replace: true }); pageLoaders.events(); });
 }
 
 $('replay-toggle').addEventListener('click', () => {
@@ -812,6 +917,9 @@ async function init() {
   } catch (error) {
     showBanner(`Failed to load status: ${error.message}`, 'error');
   }
+  // Last, so that a link naming a target is applied to a populated select
+  // rather than an empty one.
+  applyHash();
   loadOverviewEvents();
   connectStream();
 }

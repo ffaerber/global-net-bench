@@ -245,6 +245,27 @@ hosts you control in each region.
 
 Unknown configuration keys are rejected at startup rather than silently ignored.
 
+## Linking to a view
+
+The dashboard is a single page, but every view has an address, so a reload keeps
+you where you were and a link takes someone else there:
+
+```
+#/regions/eu-central                            one region and its targets
+#/routes?target=fra-s3&family=ipv4              one traceroute, ready to replay
+#/history?target=lhr-ec2&protocol=icmp&since=7d a chart with its filters applied
+#/events?type=route_change&since=24h            a filtered event log
+```
+
+Back and Forward step through views the way they do on a site with real pages.
+Overview keeps the URL bare, so the plain hostname stays the address of the
+dashboard. A link naming a target this deployment does not have is dropped
+rather than silently widening the query to everything.
+
+It lives in the fragment rather than the path because the dashboard is served as
+static files; a real path would 404 on reload until the server learned to
+rewrite it.
+
 ## The map
 
 The Overview page draws a world map: click a region to open its detail. Each
