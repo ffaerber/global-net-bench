@@ -153,6 +153,12 @@ function pointAlong(points, t) {
   return points[points.length - 1];
 }
 
+// placeOf renders the human-readable half of a geolocated position.
+function placeOf(position) {
+  if (!position) return '';
+  return [position.city, position.country_name || position.country].filter(Boolean).join(', ');
+}
+
 const MAP_ASPECT = 2; // equirectangular spans 360° by 180°
 
 class WorldMap {
@@ -299,12 +305,32 @@ class WorldMap {
     if (changed) this.render();
   }
 
-  setRegions(regions) {
+  // setRegions takes the plottable regions and, optionally, the origin the
+  // server worked out -- a local region when one is configured with
+  // coordinates, otherwise the public egress address located through GeoIP.
+  // Deriving it from a local region here is the fallback for a server that
+  // sends no origin at all.
+  setRegions(regions, origin) {
     this.regions = (regions || []).filter((r) =>
       r.latitude !== undefined && r.latitude !== null &&
       r.longitude !== undefined && r.longitude !== null);
     const local = this.regions.find((r) => r.local);
-    this.origin = local ? { lon: local.longitude, lat: local.latitude, label: local.display_name } : null;
+    if (origin && Number.isFinite(origin.latitude) && Number.isFinite(origin.longitude)) {
+      this.origin = {
+        lon: origin.longitude,
+        lat: origin.latitude,
+        label: origin.label || 'This site',
+        region: origin.region || null,
+        source: origin.source,
+        city: origin.city,
+        country: origin.country_name || origin.country,
+        ip: origin.ip,
+      };
+    } else if (local) {
+      this.origin = { lon: local.longitude, lat: local.latitude, label: local.display_name, region: local.id };
+    } else {
+      this.origin = null;
+    }
     this.rebuildLegs();
     this.render();
   }
@@ -553,7 +579,7 @@ class WorldMap {
 
     if (this.origin) {
       for (const region of this.regions) {
-        if (region.local) continue;
+        if (this.isOriginRegion(region)) continue;
         ctx.strokeStyle = this.statusColor(colors, region.status);
         ctx.globalAlpha = 0.4;
         ctx.lineWidth = 1.4;
@@ -566,18 +592,35 @@ class WorldMap {
       const [x, y] = this.project(region.longitude, region.latitude);
       const color = this.statusColor(colors, region.status);
       const radius = region.local ? 6 : 5;
+      // A position nobody configured was inferred from where the target's
+      // address block is registered. It is drawn hollow, the same way an
+      // approximate traceroute hop is, so the map never passes a guess off as
+      // a fact.
+      const inferred = region.position && region.position.source === 'geoip';
 
       ctx.beginPath();
       ctx.arc(x, y, radius + 3, 0, Math.PI * 2);
       ctx.fillStyle = color;
-      ctx.globalAlpha = 0.22;
+      ctx.globalAlpha = inferred ? 0.12 : 0.22;
       ctx.fill();
       ctx.globalAlpha = 1;
 
       ctx.beginPath();
       ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
+      if (inferred) {
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.3;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([2, 2]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        ctx.fillStyle = color;
+        ctx.fill();
+      }
       if (region.local) {
         ctx.strokeStyle = colors.text;
         ctx.lineWidth = 1.5;
@@ -595,8 +638,54 @@ class WorldMap {
       } else {
         bits.push('no data yet');
       }
+      if (inferred) bits.push(`≈ ${placeOf(region.position) || 'located by GeoIP'}`);
       this.markers.push({ kind: 'region', key: `region:${region.id}`, id: region.id, x, y, tooltip: bits.join(' · ') });
     }
+
+    this.drawOrigin(colors);
+  }
+
+  // isOriginRegion reports whether a region is where the arcs already start, so
+  // the map does not draw a zero-length arc from a point to itself.
+  isOriginRegion(region) {
+    if (!this.origin) return false;
+    if (this.origin.region) return this.origin.region === region.id;
+    return region.local;
+  }
+
+  // drawOrigin marks the vantage point when it is not one of the regions --
+  // that is, when it came from locating the public egress address rather than
+  // from a region marked local.
+  drawOrigin(colors) {
+    if (!this.origin || this.regions.some((r) => this.isOriginRegion(r))) return;
+    const ctx = this.ctx;
+    const [x, y] = this.project(this.origin.lon, this.origin.lat);
+
+    ctx.beginPath();
+    ctx.arc(x, y, 9, 0, Math.PI * 2);
+    ctx.fillStyle = colors.text;
+    ctx.globalAlpha = 0.15;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = colors.text;
+    ctx.fill();
+    ctx.strokeStyle = colors.ocean;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    this.drawLabel(this.origin.label, x + 10, y, colors);
+
+    const bits = [this.origin.label];
+    const place = placeOf(this.origin);
+    if (place) bits.push(place);
+    if (this.origin.ip) bits.push(this.origin.ip);
+    if (this.origin.source === 'geoip') bits.push('located by GeoIP');
+    this.markers.push({ kind: 'origin', key: 'origin', x, y, tooltip: bits.join(' · ') });
   }
 
   drawRoute(colors) {

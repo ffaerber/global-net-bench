@@ -227,7 +227,7 @@ site:
 regions:
   - id: asia-japan
     display_name: Tokyo
-    latitude: 35.68       # optional; places the region on the map
+    latitude: 35.68       # optional; GeoIP places the region when omitted
     longitude: 139.69
     weight: 1.0
     expected_rtt_ms: 200
@@ -249,12 +249,35 @@ Unknown configuration keys are rejected at startup rather than silently ignored.
 
 The Overview page draws a world map: click a region to open its detail. Each
 region appears where you place it with `latitude` and `longitude`, coloured by
-its current status, with a great-circle arc from the region marked
-`local: true`. A region without coordinates is still measured — it just is not
-plotted, and the dashboard says how many are missing.
+its current status, with a great-circle arc drawn from your own position.
+
+You do not have to supply any of those numbers. Where a coordinate is missing,
+the map falls back to GeoIP:
+
+| Point | Configured | Fallback with `geoip` enabled |
+| --- | --- | --- |
+| A region | `latitude` / `longitude` on the region | The address its targets resolve to |
+| The origin the arcs start from | The region marked `local: true`, if it has coordinates | Your public egress address |
+
+Configured coordinates always win, and a position that came from GeoIP is drawn
+hollow with the reason in its tooltip, the same way an approximate traceroute
+hop is. That distinction matters: a database places an address by where its
+block is registered, so an anycast endpoint or a recently reassigned range can
+land on the wrong continent, and a home connection lands on the ISP's POP rather
+than on your street. Where a region really is, only you know — set it explicitly
+for anything you care about being right.
+
+Regions are placed from the addresses of their targets, and each region votes:
+positions are grouped by city, the largest group wins, and ties go to the
+better-graded record. One endpoint whose block resolves to its owner's head
+office therefore cannot drag a region across an ocean, and no averaging puts a
+dot in the middle of the Atlantic where nothing is. Without `geoip`, a region
+with no coordinates is still measured — it is just not plotted, and the
+dashboard says how many are missing.
 
 The map is drawn on a canvas from a vendored 1:110m land outline, so it needs no
-map tiles, no API key and no Internet access at all.
+map tiles, no API key and no Internet access at all. GeoIP lookups are local
+file reads; your address is never sent to a geolocation service.
 
 ### Replaying a trace
 

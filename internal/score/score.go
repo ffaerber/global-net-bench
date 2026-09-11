@@ -48,15 +48,56 @@ type TargetScore struct {
 	UpdatedAt *time.Time    `json:"updated_at,omitempty"`
 }
 
+// PositionSource says where a plotted position came from. Configured
+// coordinates are taken as fact; a GeoIP-derived one is an inference from the
+// addresses a region's targets resolve to, or from the public egress address,
+// and the dashboard is expected to draw it as the guess it is.
+const (
+	PositionSourceConfig = "config"
+	PositionSourceGeoIP  = "geoip"
+)
+
+// Position is a point on the map together with the provenance the dashboard
+// needs in order to decide how confidently to draw it.
+type Position struct {
+	Latitude    float64 `json:"latitude"`
+	Longitude   float64 `json:"longitude"`
+	Source      string  `json:"source"`
+	City        string  `json:"city,omitempty"`
+	Country     string  `json:"country,omitempty"`
+	CountryName string  `json:"country_name,omitempty"`
+	// Confidence mirrors geoip.Confidence and is empty for configured
+	// positions, which carry no uncertainty of their own.
+	Confidence string `json:"confidence,omitempty"`
+	// IP is the address the position was inferred from, so the dashboard can
+	// say what it actually located.
+	IP string `json:"ip,omitempty"`
+}
+
+// Origin is where the map draws its arcs from: the local region when one is
+// configured with coordinates, otherwise the located public egress address.
+type Origin struct {
+	Position
+	Label string `json:"label"`
+	// Region is the ID of the local region the origin came from, empty when the
+	// origin is the public address rather than a configured region.
+	Region string `json:"region,omitempty"`
+}
+
 type RegionScore struct {
 	ID          string  `json:"id"`
 	DisplayName string  `json:"display_name"`
 	Weight      float64 `json:"weight"`
 	Local       bool    `json:"local"`
-	// Latitude and Longitude are carried through so the dashboard globe can
-	// plot the region. Absent when the region has no configured position.
-	Latitude     *float64      `json:"latitude,omitempty"`
-	Longitude    *float64      `json:"longitude,omitempty"`
+	// Latitude and Longitude are carried through so the dashboard map can plot
+	// the region. Absent when the region has neither a configured position nor
+	// one GeoIP could infer from the addresses its targets resolve to.
+	Latitude  *float64 `json:"latitude,omitempty"`
+	Longitude *float64 `json:"longitude,omitempty"`
+	// Position repeats the plotted point with its provenance. Latitude and
+	// Longitude above mirror it, whichever source won, so a client that only
+	// wants a dot on a map need not look at this.
+	Position     *Position     `json:"position,omitempty"`
 	Score        float64       `json:"score"`
 	Status       string        `json:"status"`
 	HasData      bool          `json:"has_data"`
@@ -93,6 +134,9 @@ type Snapshot struct {
 	PacketLoss   float64          `json:"packet_loss_ratio"`
 	RouteChanges int              `json:"route_changes_today"`
 	StaleRegions int              `json:"stale_regions"`
+	// Origin is where the dashboard map starts its arcs. Absent when neither a
+	// local region nor the public address could be placed.
+	Origin *Origin `json:"origin,omitempty"`
 }
 
 type Input struct {
@@ -107,6 +151,14 @@ type Input struct {
 	IPv4Enabled       bool
 	IPv6Enabled       bool
 	RouteChangesToday int
+	// GeoPositions supplies a fallback position for regions that have no
+	// configured coordinates, keyed by region ID. The engine infers these from
+	// the addresses each region's targets resolve to, so a dashboard shows a
+	// populated map without anyone hand-entering eleven pairs of numbers.
+	GeoPositions map[string]Position
+	// PublicOrigin is the located public egress address. It becomes the map
+	// origin when no local region carries coordinates, which is the usual case.
+	PublicOrigin *Origin
 }
 
 // Compute builds the full snapshot of scores.
@@ -137,11 +189,14 @@ func Compute(in Input) Snapshot {
 			DisplayName: region.DisplayName,
 			Weight:      region.Weight,
 			Local:       region.Local,
-			Latitude:    region.Latitude,
-			Longitude:   region.Longitude,
 			Status:      model.StatusUnknown,
 			IPv4:        FamilyHealth{Enabled: in.IPv4Enabled},
 			IPv6:        FamilyHealth{Enabled: in.IPv6Enabled},
+		}
+		if p := positionFor(region, in.GeoPositions); p != nil {
+			rs.Position = p
+			rs.Latitude = &p.Latitude
+			rs.Longitude = &p.Longitude
 		}
 
 		var targetScores []float64
@@ -199,6 +254,7 @@ func Compute(in Input) Snapshot {
 
 	snapshot.IPv4.Status = familyStatus(snapshot.IPv4)
 	snapshot.IPv6.Status = familyStatus(snapshot.IPv6)
+	snapshot.Origin = originFor(snapshot.Regions, in.PublicOrigin)
 
 	if lossCount > 0 {
 		snapshot.PacketLoss = lossSum / float64(lossCount)
@@ -243,6 +299,43 @@ func Compute(in Input) Snapshot {
 	}
 
 	return snapshot
+}
+
+// positionFor decides where a region sits. A configured position always wins:
+// it is a statement of fact from whoever runs the monitor, whereas a
+// GeoIP-derived one is an inference from where the target's addresses are
+// registered and can be wrong by a continent for an anycast or a
+// freshly-reassigned block.
+func positionFor(region model.Region, geo map[string]Position) *Position {
+	if region.Latitude != nil && region.Longitude != nil {
+		return &Position{
+			Latitude:  *region.Latitude,
+			Longitude: *region.Longitude,
+			Source:    PositionSourceConfig,
+		}
+	}
+	if p, ok := geo[region.ID]; ok {
+		return &p
+	}
+	return nil
+}
+
+// originFor picks the point the map draws its arcs from. A region explicitly
+// marked local is the better answer whenever it has a position, because it is
+// the machine's own vantage point; the public address is the fallback for the
+// common case of a config that never declared one.
+func originFor(regions []RegionScore, public *Origin) *Origin {
+	for _, rs := range regions {
+		if !rs.Local || rs.Position == nil {
+			continue
+		}
+		return &Origin{
+			Position: *rs.Position,
+			Label:    rs.DisplayName,
+			Region:   rs.ID,
+		}
+	}
+	return public
 }
 
 func scoreTarget(target model.Target, measurements []model.Measurement, region model.Region, in Input) TargetScore {

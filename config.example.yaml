@@ -238,8 +238,17 @@ retention:
 prometheus:
   enabled: true
 
-# Places traceroute hops on the dashboard globe. Lookups are made against local
-# database files, so nothing about your routes is sent anywhere.
+# Places things on the dashboard map: traceroute hops, any region that has no
+# latitude/longitude of its own, and the origin the map draws its arcs from,
+# which is your public address located through the same database. Lookups are
+# made against local database files, so nothing about your routes or your
+# address is sent anywhere.
+#
+# With geoip enabled the map works without a single coordinate below. Configured
+# coordinates still win wherever they are present, and they are worth setting
+# for the region you care about: a GeoIP position is where an address block is
+# registered, which for an anycast endpoint or a reassigned range can be the
+# wrong continent. Inferred positions are drawn hollow to say so.
 #
 # No database ships with GlobalNetBench. DB-IP Lite needs no account:
 #

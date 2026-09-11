@@ -39,16 +39,19 @@ func (e *Engine) Snapshot(ctx context.Context) score.Snapshot {
 		changesToday = len(today)
 	}
 
+	latest := e.Latest()
 	return score.Compute(score.Input{
 		Site:              e.cfg.Site.ID,
 		Regions:           e.regions,
-		Latest:            e.Latest(),
+		Latest:            latest,
 		Baselines:         e.detector.Baselines(),
 		RouteChanges:      routeChanges,
 		RouteChangesToday: changesToday,
 		MaxAge:            e.staleAfter(),
 		IPv4Enabled:       e.cfg.Network.IPv4,
 		IPv6Enabled:       e.cfg.Network.IPv6,
+		GeoPositions:      e.regionPositions(latest),
+		PublicOrigin:      e.publicOrigin(),
 	})
 }
 

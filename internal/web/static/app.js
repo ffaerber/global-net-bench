@@ -140,7 +140,7 @@ function renderSnapshot(snapshot) {
   $('route-changes').textContent = snapshot.route_changes_today ?? 0;
 
   renderRegionMap(snapshot.regions || []);
-  renderWorldMap(snapshot.regions || []);
+  renderWorldMap(snapshot.regions || [], snapshot.origin || null);
   renderResolvers(snapshot.resolvers || []);
   renderRegionsTable(snapshot.regions || []);
 
@@ -182,23 +182,44 @@ function renderRegionMap(regions) {
   }
 }
 
-function renderWorldMap(regions) {
+// renderWorldMap plots the regions and says plainly where each dot came from.
+// A position taken from the configuration is a statement of fact; one derived
+// from GeoIP is an inference about where an address block is registered, and
+// the caption has to say so rather than letting the two look identical.
+function renderWorldMap(regions, origin) {
   const worldMap = mapFor('overview', 'overview-map');
   if (!worldMap) return;
-  worldMap.setRegions(regions);
+  worldMap.setRegions(regions, origin);
 
   const plotted = regions.filter((r) => r.latitude !== null && r.latitude !== undefined &&
     r.longitude !== null && r.longitude !== undefined);
+  const inferred = plotted.filter((r) => r.position && r.position.source === 'geoip');
   const note = $('overview-map-note');
   const missing = regions.length - plotted.length;
-  if (missing > 0) {
-    note.textContent = missing === regions.length
-      ? 'No region has coordinates yet. Add latitude and longitude to each region in the configuration to plot them.'
-      : `${missing} of ${regions.length} regions have no coordinates and are not shown. Add latitude and longitude to plot them.`;
-    note.hidden = false;
-  } else {
-    note.hidden = true;
+  const parts = [];
+
+  if (missing === regions.length) {
+    parts.push('No region could be placed on the map. Either add latitude and longitude to each region in the configuration, or enable geoip and point it at a city database so regions can be placed from the addresses their targets resolve to.');
+  } else if (missing > 0) {
+    parts.push(`${missing} of ${regions.length} regions could not be placed and are not shown. Add latitude and longitude to plot them.`);
   }
+
+  if (inferred.length > 0) {
+    parts.push(inferred.length === 1
+      ? '1 region, shown hollow, was placed from a GeoIP database rather than configured coordinates.'
+      : `${inferred.length} regions, shown hollow, were placed from a GeoIP database rather than configured coordinates.`);
+    parts.push('That is where the address block is registered, which is not always where the hardware is; configured coordinates always win over it.');
+  }
+
+  if (origin && origin.source === 'geoip') {
+    const place = [origin.city, origin.country_name || origin.country].filter(Boolean).join(', ');
+    parts.push(`Arcs start from your public address${origin.ip ? ` (${origin.ip})` : ''}, located${place ? ` in ${place}` : ''} by GeoIP. Mark a region local: true with coordinates to set the origin yourself.`);
+  } else if (!origin && plotted.length > 0) {
+    parts.push('No arcs are drawn because the map has no origin: mark a region local: true and give it coordinates, or enable geoip so the public address can be located.');
+  }
+
+  note.textContent = parts.join(' ');
+  note.hidden = parts.length === 0;
 }
 
 function renderResolvers(resolvers) {
@@ -378,7 +399,7 @@ function renderRouteMap(route) {
   const hops = (route && route.hops) || [];
   const located = hops.filter((h) => h.geo && h.geo.latitude !== null && h.geo.latitude !== undefined &&
     h.geo.longitude !== null && h.geo.longitude !== undefined);
-  worldMap.setRegions(state.snapshot ? state.snapshot.regions || [] : []);
+  worldMap.setRegions(state.snapshot ? state.snapshot.regions || [] : [], state.snapshot ? state.snapshot.origin || null : null);
   worldMap.onProgress = updateReplayReadout;
   worldMap.setRoute(located.length ? located : null);
   worldMap.setPlaying(state.replayPlaying);

@@ -209,3 +209,140 @@ func TestStatusForScore(t *testing.T) {
 		}
 	}
 }
+
+// A position typed into the configuration is a statement about the world from
+// whoever runs the monitor. A GeoIP-derived one is a guess about an address
+// block, so it must never override the former.
+func TestConfiguredPositionBeatsGeoIP(t *testing.T) {
+	regions := region(model.Target{ID: "syd", Region: "test", Hostname: "syd.example"})
+	regions[0].Latitude = model.Float(-33.87)
+	regions[0].Longitude = model.Float(151.21)
+
+	snapshot := Compute(Input{
+		Regions:     regions,
+		Latest:      []model.Measurement{icmp("syd", 280, 2, 0)},
+		IPv4Enabled: true,
+		GeoPositions: map[string]Position{
+			"test": {Latitude: 47.6, Longitude: -122.3, Source: PositionSourceGeoIP, City: "Seattle"},
+		},
+	})
+
+	rs := snapshot.Regions[0]
+	if rs.Position == nil {
+		t.Fatal("expected the region to be plotted")
+	}
+	if rs.Position.Source != PositionSourceConfig {
+		t.Errorf("source = %q, want %q", rs.Position.Source, PositionSourceConfig)
+	}
+	if *rs.Latitude != -33.87 || *rs.Longitude != 151.21 {
+		t.Errorf("position = %g,%g, want the configured -33.87,151.21", *rs.Latitude, *rs.Longitude)
+	}
+}
+
+func TestGeoIPPlacesARegionWithNoCoordinates(t *testing.T) {
+	snapshot := Compute(Input{
+		Regions:     region(model.Target{ID: "syd", Region: "test", Hostname: "syd.example"}),
+		Latest:      []model.Measurement{icmp("syd", 280, 2, 0)},
+		IPv4Enabled: true,
+		GeoPositions: map[string]Position{
+			"test": {Latitude: -33.87, Longitude: 151.21, Source: PositionSourceGeoIP, City: "Sydney", Confidence: "high"},
+		},
+	})
+
+	rs := snapshot.Regions[0]
+	if rs.Latitude == nil || rs.Longitude == nil {
+		t.Fatal("expected the region to be plotted from GeoIP")
+	}
+	if rs.Position.Source != PositionSourceGeoIP {
+		t.Errorf("source = %q, want %q", rs.Position.Source, PositionSourceGeoIP)
+	}
+	if *rs.Latitude != -33.87 {
+		t.Errorf("latitude = %g, want -33.87", *rs.Latitude)
+	}
+}
+
+func TestRegionStaysUnplottedWithoutAnyPosition(t *testing.T) {
+	snapshot := Compute(Input{
+		Regions:     region(model.Target{ID: "syd", Region: "test", Hostname: "syd.example"}),
+		Latest:      []model.Measurement{icmp("syd", 280, 2, 0)},
+		IPv4Enabled: true,
+	})
+
+	rs := snapshot.Regions[0]
+	if rs.Position != nil || rs.Latitude != nil || rs.Longitude != nil {
+		t.Errorf("expected no position, got %+v", rs.Position)
+	}
+	if snapshot.Origin != nil {
+		t.Errorf("expected no origin, got %+v", snapshot.Origin)
+	}
+}
+
+// The local region is the machine's own vantage point, so it outranks the
+// located public address, which is only ever the ISP's view of the connection.
+func TestLocalRegionOutranksThePublicAddressAsOrigin(t *testing.T) {
+	regions := region(model.Target{ID: "gw", Region: "test", Hostname: "192.168.1.1"})
+	regions[0].Local = true
+	regions[0].Latitude = model.Float(34.78)
+	regions[0].Longitude = model.Float(32.42)
+
+	snapshot := Compute(Input{
+		Regions:     regions,
+		Latest:      []model.Measurement{icmp("gw", 2, 0.2, 0)},
+		IPv4Enabled: true,
+		PublicOrigin: &Origin{
+			Position: Position{Latitude: 51.5, Longitude: -0.1, Source: PositionSourceGeoIP, City: "London"},
+			Label:    "Home",
+		},
+	})
+
+	if snapshot.Origin == nil {
+		t.Fatal("expected an origin")
+	}
+	if snapshot.Origin.Region != "test" || snapshot.Origin.Source != PositionSourceConfig {
+		t.Errorf("origin = %+v, want the configured local region", snapshot.Origin)
+	}
+	if snapshot.Origin.Latitude != 34.78 {
+		t.Errorf("origin latitude = %g, want 34.78", snapshot.Origin.Latitude)
+	}
+}
+
+func TestPublicAddressBecomesTheOriginWhenNoLocalRegionIsPlaced(t *testing.T) {
+	public := &Origin{
+		Position: Position{Latitude: 51.5, Longitude: -0.1, Source: PositionSourceGeoIP, City: "London", IP: "81.2.69.142"},
+		Label:    "Home",
+	}
+	snapshot := Compute(Input{
+		Regions:      region(model.Target{ID: "syd", Region: "test", Hostname: "syd.example"}),
+		Latest:       []model.Measurement{icmp("syd", 280, 2, 0)},
+		IPv4Enabled:  true,
+		PublicOrigin: public,
+	})
+
+	if snapshot.Origin == nil || snapshot.Origin.IP != "81.2.69.142" {
+		t.Fatalf("origin = %+v, want the located public address", snapshot.Origin)
+	}
+	if snapshot.Origin.Region != "" {
+		t.Errorf("origin region = %q, want it empty for a public-address origin", snapshot.Origin.Region)
+	}
+}
+
+// A local region that was never given coordinates cannot be an origin, and
+// falling back to the public address is better than drawing no arcs at all.
+func TestUnplacedLocalRegionFallsBackToThePublicAddress(t *testing.T) {
+	regions := region(model.Target{ID: "gw", Region: "test", Hostname: "192.168.1.1"})
+	regions[0].Local = true
+
+	snapshot := Compute(Input{
+		Regions:     regions,
+		Latest:      []model.Measurement{icmp("gw", 2, 0.2, 0)},
+		IPv4Enabled: true,
+		PublicOrigin: &Origin{
+			Position: Position{Latitude: 51.5, Longitude: -0.1, Source: PositionSourceGeoIP},
+			Label:    "Home",
+		},
+	})
+
+	if snapshot.Origin == nil || snapshot.Origin.Source != PositionSourceGeoIP {
+		t.Fatalf("origin = %+v, want the public address", snapshot.Origin)
+	}
+}
